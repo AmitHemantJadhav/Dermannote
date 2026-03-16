@@ -1,0 +1,20 @@
+# ── Core backend (always required) ────────────────────────────────────────────
+fastapi>=0.104.0          # lifespan= parameter requires 0.104+
+uvicorn[standard]>=0.24.0 # [standard] pulls in httptools, websockets, watchfiles
+sqlalchemy>=2.0.23        # mapped_column / async ORM requires 2.0+
+aiosqlite>=0.19.0         # async SQLite driver for SQLAlchemy
+greenlet>=3.0.0           # required by SQLAlchemy async engine (not auto-installed on Python 3.12+)
+pydantic>=2.5.0           # model_config dict syntax requires Pydantic v2
+python-multipart>=0.0.9   # required by FastAPI for multipart/form-data (file upload)
+pillow>=10.1.0            # UnidentifiedImageError + Image.LANCZOS
+numpy>=1.24.0             # default_rng, dirichlet distribution
+python-dotenv>=1.0.0      # .env file loading
+aiofiles>=23.2.1          # async file I/O used in upload + export
+
+# ── Optional: real ML classifier (USE_MOCK=false) ─────────────────────────────
+# Requires Python 3.10+, ~4 GB download, GPU strongly recommended.
+# Run after uncommenting:  pip install transformers torch
+# Then pre-download weights: python scripts/download_models.py
+#
+# transformers>=4.38.0    # AutoImageProcessor stable from 4.38+
+# torch>=2.1.0            # tested on 2.1 (CPU) and 2.2 (CUDA 12.1)
