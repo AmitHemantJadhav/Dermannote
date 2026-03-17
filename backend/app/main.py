@@ -24,6 +24,10 @@ from app.models.database import init_db
 UPLOAD_DIR = "uploads"
 EXPORT_DIR = "exports"
 
+# Create dirs at import time so StaticFiles mount doesn't fail on cold start
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(EXPORT_DIR, exist_ok=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
