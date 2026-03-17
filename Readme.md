@@ -63,7 +63,7 @@ Built with **FastAPI + SQLite** on the backend and **Next.js** on the frontend. 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/Shaurya-b167/Dermannotate.git
+git clone https://github.com/AmitHemantJadhav/Dermannote.git
 cd Dermannotate
 ```
 
