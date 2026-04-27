@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { AnnotationOut } from "@/lib/api";
+import { AnnotationOut, segmentImage } from "@/lib/api";
 
 interface Point {
   x: number;
@@ -13,6 +13,9 @@ interface Props {
   height: number;
   existingAnnotations: AnnotationOut[];
   onPointsChange: (points: Point[]) => void;
+  imageId: number | null;
+  imageWidth: number;
+  imageHeight: number;
 }
 
 type FabricModule = typeof import("fabric");
@@ -22,11 +25,16 @@ export default function AnnotationCanvas({
   height,
   existingAnnotations,
   onPointsChange,
+  imageId,
+  imageWidth,
+  imageHeight,
 }: Props) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<{ canvas: InstanceType<FabricModule["Canvas"]>; mod: FabricModule } | null>(null);
 
   const [drawing, setDrawing] = useState(false);
+  const [samMode, setSamMode] = useState(false);
+  const [samLoading, setSamLoading] = useState(false);
   const pointsRef = useRef<Point[]>([]);
   // Fabric objects for in-progress polygon (dots + lines)
   const inProgressRef = useRef<object[]>([]);
@@ -93,13 +101,75 @@ export default function AnnotationCanvas({
   }
 
   const handleCanvasClick = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!drawing || !fabricRef.current) return;
-
+    async (e: React.MouseEvent<HTMLCanvasElement>) => {
       const ref = fabricRef.current;
+      if (!ref) return;
+
       const rect = canvasElRef.current!.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      // ── SAM mode: single click → auto-segment ──
+      if (samMode && imageId != null) {
+        setSamLoading(true);
+
+        // Show pulsing dot at click position
+        const dot = new ref.mod.Circle({
+          left: x - 6,
+          top: y - 6,
+          radius: 6,
+          fill: "#00b4d8",
+          stroke: "#0096c7",
+          strokeWidth: 2,
+          selectable: false,
+          opacity: 0.8,
+        });
+        (dot as unknown as { _sampulse: boolean })._sampulse = true;
+        ref.canvas.add(dot);
+        ref.canvas.renderAll();
+
+        try {
+          const result = await segmentImage(imageId, {
+            x,
+            y,
+            display_width: width,
+            display_height: height,
+          });
+
+          // Remove pulsing dot
+          const toRemove = ref.canvas
+            .getObjects()
+            .filter((o) => (o as unknown as { _sampulse?: boolean })._sampulse);
+          toRemove.forEach((o) => ref.canvas.remove(o));
+
+          if (result.points.length >= 3) {
+            const poly = new ref.mod.Polygon(result.points, {
+              fill: "rgba(0, 180, 216, 0.25)",
+              stroke: "#00b4d8",
+              strokeWidth: 2,
+              selectable: true,
+              hasControls: false,
+            });
+            ref.canvas.add(poly);
+            onPointsChange(result.points);
+          }
+        } catch (err) {
+          // Remove pulsing dot on error
+          const toRemove = ref.canvas
+            .getObjects()
+            .filter((o) => (o as unknown as { _sampulse?: boolean })._sampulse);
+          toRemove.forEach((o) => ref.canvas.remove(o));
+          console.error("SAM segmentation failed:", err);
+        } finally {
+          setSamLoading(false);
+          setSamMode(false);
+          ref.canvas.renderAll();
+        }
+        return;
+      }
+
+      // ── Manual drawing mode ──
+      if (!drawing) return;
 
       const newPoint: Point = { x: Math.round(x), y: Math.round(y) };
       const newPoints = [...pointsRef.current, newPoint];
@@ -132,13 +202,20 @@ export default function AnnotationCanvas({
       ref.canvas.renderAll();
       onPointsChange(newPoints);
     },
-    [drawing, onPointsChange]
+    [drawing, samMode, imageId, width, height, onPointsChange]
   );
 
   const startDrawing = () => {
+    setSamMode(false);
     setDrawing(true);
     pointsRef.current = [];
     onPointsChange([]);
+  };
+
+  const startSamMode = () => {
+    setDrawing(false);
+    pointsRef.current = [];
+    setSamMode(true);
   };
 
   const finishPolygon = () => {
@@ -182,6 +259,7 @@ export default function AnnotationCanvas({
     inProgressRef.current = [];
     onPointsChange([]);
     setDrawing(false);
+    setSamMode(false);
     ref.canvas.renderAll();
   };
 
@@ -195,6 +273,8 @@ export default function AnnotationCanvas({
     }
   };
 
+  const cursorStyle = samMode ? "crosshair" : drawing ? "crosshair" : "default";
+
   return (
     <div style={{ position: "relative", width, height }}>
       <canvas
@@ -204,9 +284,43 @@ export default function AnnotationCanvas({
           position: "absolute",
           top: 0,
           left: 0,
-          cursor: drawing ? "crosshair" : "default",
+          cursor: cursorStyle,
         }}
       />
+
+      {/* SAM loading overlay */}
+      {samLoading && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width,
+            height,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(0, 0, 0, 0.3)",
+            borderRadius: 4,
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#0f1a1aee",
+              padding: "8px 16px",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "#00b4d8",
+              fontFamily: "system-ui, sans-serif",
+              fontWeight: 600,
+            }}
+          >
+            Segmenting...
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div
@@ -223,10 +337,30 @@ export default function AnnotationCanvas({
           backdropFilter: "blur(4px)",
         }}
       >
-        {!drawing ? (
-          <ToolBtn onClick={startDrawing} color="#e07a5f">
-            Draw Polygon
-          </ToolBtn>
+        {!drawing && !samMode ? (
+          <>
+            <ToolBtn onClick={startSamMode} color="#00b4d8" disabled={imageId == null}>
+              Auto-Segment
+            </ToolBtn>
+            <ToolBtn onClick={startDrawing} color="#e07a5f">
+              Draw Polygon
+            </ToolBtn>
+            <ToolBtn onClick={deleteSelected} color="#5a7d7d">
+              Delete Selected
+            </ToolBtn>
+            <ToolBtn onClick={clearCanvas} color="#5a7d7d">
+              Clear All
+            </ToolBtn>
+          </>
+        ) : samMode ? (
+          <>
+            <ToolBtn onClick={() => {}} color="#00b4d8" disabled>
+              Click lesion to segment
+            </ToolBtn>
+            <ToolBtn onClick={() => setSamMode(false)} color="#5a7d7d">
+              Cancel
+            </ToolBtn>
+          </>
         ) : (
           <>
             <ToolBtn onClick={finishPolygon} color="#81b29a">
@@ -234,16 +368,6 @@ export default function AnnotationCanvas({
             </ToolBtn>
             <ToolBtn onClick={clearCanvas} color="#5a7d7d">
               Cancel
-            </ToolBtn>
-          </>
-        )}
-        {!drawing && (
-          <>
-            <ToolBtn onClick={deleteSelected} color="#5a7d7d">
-              Delete Selected
-            </ToolBtn>
-            <ToolBtn onClick={clearCanvas} color="#5a7d7d">
-              Clear All
             </ToolBtn>
           </>
         )}
@@ -256,24 +380,28 @@ function ToolBtn({
   onClick,
   color,
   children,
+  disabled,
 }: {
   onClick: () => void;
   color: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         fontSize: 12,
-        color,
+        color: disabled ? "#5a7d7d" : color,
         backgroundColor: `${color}18`,
-        border: `1px solid ${color}55`,
+        border: `1px solid ${disabled ? "#2a4040" : color}55`,
         borderRadius: 5,
         padding: "4px 10px",
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         fontFamily: "system-ui, sans-serif",
         whiteSpace: "nowrap",
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       {children}

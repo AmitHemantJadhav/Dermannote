@@ -13,6 +13,9 @@ interface Props {
   image: ImageOut | null;
   annotations: AnnotationOut[];
   onSegmentationChange: (points: Point[]) => void;
+  gradcamUrl?: string | null;
+  showGradCAM?: boolean;
+  gradcamOpacity?: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -22,7 +25,14 @@ const STATUS_COLORS: Record<string, string> = {
   reviewed:  "#81b29a",
 };
 
-export default function ImageViewer({ image, annotations, onSegmentationChange }: Props) {
+export default function ImageViewer({
+  image,
+  annotations,
+  onSegmentationChange,
+  gradcamUrl = null,
+  showGradCAM = false,
+  gradcamOpacity = 0.5,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
 
@@ -129,6 +139,34 @@ export default function ImageViewer({ image, annotations, onSegmentationChange }
         draggable={false}
       />
 
+      {/* GradCAM heatmap overlay — between base image and annotation canvas */}
+      {showGradCAM && gradcamUrl && displaySize.width > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={gradcamUrl}
+            alt="GradCAM heatmap"
+            style={{
+              display: "block",
+              width: displaySize.width,
+              height: displaySize.height,
+              opacity: gradcamOpacity,
+              objectFit: "contain",
+              userSelect: "none",
+            }}
+            draggable={false}
+          />
+        </div>
+      )}
+
       {/* Annotation canvas — centred absolutely over the image */}
       {displaySize.width > 0 && (
         <div
@@ -145,7 +183,53 @@ export default function ImageViewer({ image, annotations, onSegmentationChange }
             height={displaySize.height}
             existingAnnotations={annotations}
             onPointsChange={onSegmentationChange}
+            imageId={image.id}
+            imageWidth={image.width}
+            imageHeight={image.height}
           />
+        </div>
+      )}
+
+      {/* GradCAM floating legend on image */}
+      {showGradCAM && gradcamUrl && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 50,
+            right: 16,
+            backgroundColor: "#0f1a1add",
+            borderRadius: 6,
+            padding: "8px 12px",
+            backdropFilter: "blur(6px)",
+            pointerEvents: "none",
+            minWidth: 140,
+          }}
+        >
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: "#8aacac",
+              margin: "0 0 4px",
+              fontFamily: "system-ui, sans-serif",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Model Focus
+          </p>
+          <div
+            style={{
+              height: 8,
+              borderRadius: 2,
+              background: "linear-gradient(90deg, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)",
+              marginBottom: 3,
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 9, color: "#5a7d7d", fontFamily: "system-ui, sans-serif" }}>Low</span>
+            <span style={{ fontSize: 9, color: "#5a7d7d", fontFamily: "system-ui, sans-serif" }}>High</span>
+          </div>
         </div>
       )}
 
