@@ -7,6 +7,12 @@ import ConfidenceBadge from "./ConfidenceBadge";
 interface Props {
   predictions: PredictionOut[];
   onAccept: (label: string) => void;
+  showGradCAM?: boolean;
+  gradcamLoading?: boolean;
+  gradcamOpacity?: number;
+  onToggleGradCAM?: () => void;
+  onGradCAMOpacityChange?: (opacity: number) => void;
+  isMockMode?: boolean;
 }
 
 const DISEASE_INFO: Record<string, string> = {
@@ -25,7 +31,16 @@ function confidenceColor(c: number): string {
   return "#e07a5f";
 }
 
-export default function PredictionPanel({ predictions, onAccept }: Props) {
+export default function PredictionPanel({
+  predictions,
+  onAccept,
+  showGradCAM = false,
+  gradcamLoading = false,
+  gradcamOpacity = 0.5,
+  onToggleGradCAM,
+  onGradCAMOpacityChange,
+  isMockMode = true,
+}: Props) {
   const [accepted, setAccepted] = useState<string>("");
   const [hoveredId, setHoveredId] = useState<number | null>(null);
 
@@ -211,6 +226,105 @@ export default function PredictionPanel({ predictions, onAccept }: Props) {
       >
         model: {predictions[0]?.model_name}
       </p>
+
+      {/* GradCAM controls — hidden in mock mode */}
+      {!isMockMode && onToggleGradCAM && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={onToggleGradCAM}
+            disabled={gradcamLoading}
+            style={{
+              width: "100%",
+              padding: "7px 12px",
+              fontSize: 12,
+              fontFamily: "system-ui, sans-serif",
+              color: showGradCAM ? "#0f1a1a" : "#81b29a",
+              backgroundColor: showGradCAM ? "#81b29a" : "#81b29a18",
+              border: "1px solid #81b29a55",
+              borderRadius: 5,
+              cursor: gradcamLoading ? "wait" : "pointer",
+              transition: "background-color 0.15s, color 0.15s",
+            }}
+          >
+            {gradcamLoading ? "Generating GradCAM…" : showGradCAM ? "Hide GradCAM" : "Show GradCAM"}
+          </button>
+
+          {showGradCAM && onGradCAMOpacityChange && (
+            <div style={{ marginTop: 8 }}>
+              {/* Opacity slider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, color: "#5a7d7d", fontFamily: "Consolas, monospace", flexShrink: 0 }}>
+                  Opacity
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={gradcamOpacity}
+                  onChange={(e) => onGradCAMOpacityChange(parseFloat(e.target.value))}
+                  style={{ flex: 1, accentColor: "#81b29a" }}
+                />
+                <span style={{ fontSize: 11, color: "#8aacac", fontFamily: "Consolas, monospace", width: 32, textAlign: "right" }}>
+                  {Math.round(gradcamOpacity * 100)}%
+                </span>
+              </div>
+
+              {/* Color legend */}
+              <div
+                style={{
+                  marginTop: 10,
+                  backgroundColor: "#1c2e2e",
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "#8aacac",
+                    margin: "0 0 6px",
+                    fontFamily: "system-ui, sans-serif",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Model Attention Map
+                </p>
+                <div
+                  style={{
+                    height: 10,
+                    borderRadius: 3,
+                    background: "linear-gradient(90deg, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)",
+                    marginBottom: 4,
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 10, color: "#5a7d7d", fontFamily: "system-ui, sans-serif" }}>
+                    Low focus
+                  </span>
+                  <span style={{ fontSize: 10, color: "#5a7d7d", fontFamily: "system-ui, sans-serif" }}>
+                    High focus
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontSize: 11,
+                    color: "#5a7d7d",
+                    margin: "8px 0 0",
+                    lineHeight: 1.5,
+                    fontFamily: "system-ui, sans-serif",
+                  }}
+                >
+                  Warm colors (red/yellow) show where the model looked most when making its prediction.
+                  Cool colors (blue/green) indicate areas with less influence on the diagnosis.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
