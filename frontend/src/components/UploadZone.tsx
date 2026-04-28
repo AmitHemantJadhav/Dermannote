@@ -10,42 +10,59 @@ interface Props {
 export default function UploadZone({ onUploaded }: Props) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<"idle" | "uploading" | "classifying">("idle");
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const process = async (file: File) => {
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
+  const processFiles = async (files: File[]) => {
+    const valid = files.filter((f) => ["image/jpeg", "image/png"].includes(f.type));
+    if (valid.length === 0) {
       setError("Only JPEG and PNG files are accepted.");
       return;
     }
 
     setError(null);
+    const isBatch = valid.length > 1;
 
     try {
-      setStatus("uploading");
-      const image = await uploadImage(file);
+      if (isBatch) {
+        // Multi-file: upload all without classifying (use Batch Processing later)
+        setStatus("uploading");
+        setProgress({ done: 0, total: valid.length });
+        let lastImage: ImageOut | null = null;
+        for (let i = 0; i < valid.length; i++) {
+          lastImage = await uploadImage(valid[i]);
+          setProgress({ done: i + 1, total: valid.length });
+        }
+        if (lastImage) onUploaded(lastImage);
+      } else {
+        // Single file: upload and classify immediately
+        setStatus("uploading");
+        const image = await uploadImage(valid[0]);
 
-      setStatus("classifying");
-      await classifyImage(image.id);
+        setStatus("classifying");
+        await classifyImage(image.id);
 
-      onUploaded(image);
+        onUploaded(image);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload failed.");
     } finally {
       setStatus("idle");
+      setProgress({ done: 0, total: 0 });
     }
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) process(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) processFiles(files);
   };
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) process(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) processFiles(files);
     e.target.value = "";
   };
 
@@ -72,6 +89,7 @@ export default function UploadZone({ onUploaded }: Props) {
           ref={inputRef}
           type="file"
           accept="image/jpeg,image/png"
+          multiple
           onChange={onFileChange}
           style={{ display: "none" }}
         />
@@ -80,7 +98,11 @@ export default function UploadZone({ onUploaded }: Props) {
           <div>
             <Spinner />
             <p style={{ fontSize: 12, color: "#8aacac", margin: "8px 0 0" }}>
-              {status === "uploading" ? "Uploading…" : "Classifying…"}
+              {status === "uploading" && progress.total > 1
+                ? `Uploading ${progress.done}/${progress.total}…`
+                : status === "uploading"
+                  ? "Uploading…"
+                  : "Classifying…"}
             </p>
           </div>
         ) : (
@@ -99,7 +121,7 @@ export default function UploadZone({ onUploaded }: Props) {
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
             <p style={{ fontSize: 12, color: "#5a7d7d", margin: 0 }}>
-              Drop image or click
+              Drop images or click
             </p>
           </>
         )}
