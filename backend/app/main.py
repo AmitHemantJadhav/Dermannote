@@ -18,11 +18,22 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
-from app.api import annotations, export, images, predictions
+from app.api import (
+    annotations,
+    attention,
+    batch,
+    embeddings,
+    export,
+    images,
+    predictions,
+    queue,
+    reports,
+    segmentation,
+)
 from app.models.database import init_db
 
-UPLOAD_DIR = "uploads"
-EXPORT_DIR = "exports"
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+EXPORT_DIR = os.getenv("EXPORT_DIR", "exports")
 
 # Create dirs at import time so StaticFiles mount doesn't fail on cold start
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -54,11 +65,11 @@ app = FastAPI(
 )
 
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
-allowed_origins = [o.strip() for o in _raw_origins.split(",")]
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,6 +81,12 @@ app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["predictions"])
 app.include_router(annotations.router, prefix="/api/annotations", tags=["annotations"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
+app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
+app.include_router(segmentation.router, prefix="/api/segmentation", tags=["segmentation"])
+app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(batch.router, prefix="/api/batch", tags=["batch"])
+app.include_router(embeddings.router, prefix="/api/embeddings", tags=["embeddings"])
+app.include_router(attention.router, prefix="/api/attention", tags=["attention"])
 
 
 @app.get("/")
